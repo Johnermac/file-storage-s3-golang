@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -59,11 +61,25 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	//fmt.Println("media type:", mediaType)
 	
-	// Encoding data to base64
+	// 1 - Encoding data to base64
 	//encodedString := base64.StdEncoding.EncodeToString(data)
 	//thumbnailURL := fmt.Sprintf("data:%s;base64,%s", mediaType, encodedString)
 	
-	thumbFile := fmt.Sprintf("%v.%s", videoID.String(), mediaType[len("image/"):])
+	// 2 - Saving file to disk and providing URL
+	//thumbFile := fmt.Sprintf("%v.%s", videoID.String(), mediaType[len("image/"):])
+	//fileURL := filepath.Join(cfg.assetsRoot, thumbFile)	
+	//thumbnailURL := fmt.Sprintf("http://localhost:%v/assets/%v", cfg.port, thumbFile)
+
+	
+	// 3 - Saving file to random characters to avoid caching issues
+	
+	// generate random 32 bytes file path
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	// encode to base64
+	filePath := base64.RawURLEncoding.EncodeToString(key)	
+	thumbFile := fmt.Sprintf("%v.%s", filePath, mediaType[len("image/"):])
 	fileURL := filepath.Join(cfg.assetsRoot, thumbFile)	
 	thumbnailURL := fmt.Sprintf("http://localhost:%v/assets/%v", cfg.port, thumbFile)
 	
