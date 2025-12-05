@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -69,19 +73,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	if mediaCheck != "video/mp4" {
 		respondWithError(w, http.StatusUnauthorized, "file is not an MP4", nil)
 		return 
-	}	
-
-	// 3 - Saving file to random characters to avoid caching issues
-	
-	// generate random 32 bytes file path
-	key := make([]byte, 32)
-	rand.Read(key)
-
-	// encode to base64
-	filePath := base64.RawURLEncoding.EncodeToString(key)	
-	videoFile := fmt.Sprintf("%v.%s", filePath, "mp4")
-	//fileURL := filepath.Join(cfg.assetsRoot, videoFile)	
-	videoURL := fmt.Sprintf("https://%v.s3.%v.amazonaws.com/%v", cfg.s3Bucket, cfg.s3Region, videoFile)
+	}		
 	
 	createFile, err := os.CreateTemp("", "tubely-upload.mp4")
 	if err != nil {
@@ -96,6 +88,24 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Could not save the video file", err)
 		return
 	}	
+
+	aspectRatio, err := getVideoAspectRatio(createFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not get video aspect ratio", err)
+		return
+	}
+	
+	// generate random 32 bytes file path
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	// encode to base64
+	filePath := base64.RawURLEncoding.EncodeToString(key)	
+
+	videoFile := fmt.Sprintf("%v/%v.%s", aspectRatio, filePath, "mp4")
+	videoURL := fmt.Sprintf("https://%v.s3.%v.amazonaws.com/%v", cfg.s3Bucket, cfg.s3Region, videoFile)
+
+
 
 	createFile.Seek(0, io.SeekStart)		
 
@@ -127,4 +137,86 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, http.StatusOK, video)
+}
+
+func getVideoAspectRatio(filePath string) (string, error) {
+	type FFProbeOutput struct {
+			Streams []struct {
+					Width  int `json:"width"`
+					Height int `json:"height"`
+			} `json:"streams"`
+	}
+
+	cmd := exec.Command(
+			"ffprobe",
+			"-v", "error",
+			"-print_format", "json",
+			"-show_streams",
+			filePath,
+	)
+	
+	var out bytes.Buffer
+	cmd.Stdout = &out	
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	
+	var probe FFProbeOutput
+	if err := json.Unmarshal(out.Bytes(), &probe); err != nil  {
+		return "", err
+	}
+
+	if len(probe.Streams) == 0 {
+		return "", fmt.Errorf("no streams found in video")
+	}
+
+	width := probe.Streams[0].Width
+	height := probe.Streams[0].Height
+
+	if width == 0 || height == 0 {
+		return "", fmt.Errorf("invalid video dimensions")
+	}
+
+	 // "portrait" / "landscape" / "other"
+	aspectRatio := detectAspectRatio(width, height)	
+
+	switch aspectRatio {
+	case "16:9":
+		aspectRatio = "landscape"
+	case "9:16":
+		aspectRatio = "portrait"
+	default:
+		aspectRatio = "other"
+	}
+	
+  return aspectRatio, nil  
+
+}
+
+func detectAspectRatio(width, height int) string {
+			const tolerance = 0.03 // 3%
+
+			w := float64(width)
+			h := float64(height)
+
+			// Compare ratios
+			ratio := w / h
+
+			ratio16x9 := 16.0 / 9.0
+			ratio9x16 := 9.0 / 16.0
+
+			if isApprox(ratio, ratio16x9, tolerance) {
+					return "16:9"
+			}
+
+			if isApprox(ratio, ratio9x16, tolerance) {
+					return "9:16"
+			}
+
+			return "other"
+	}
+
+func isApprox(a, b, tolerance float64) bool {
+		diff := math.Abs(a - b)
+		return diff/b <= tolerance
 }
