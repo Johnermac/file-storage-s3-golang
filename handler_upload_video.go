@@ -82,7 +82,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 	
 	defer os.Remove(createFile.Name())	
-	defer createFile.Close()
+	defer createFile.Close()	
 
 	if _, err := io.Copy(createFile, file); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not save the video file", err)
@@ -94,6 +94,20 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Could not get video aspect ratio", err)
 		return
 	}
+
+	processedVideoPath, err := processVideoForFastStart(createFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not process video for fast start", err)
+		return
+	}
+
+	// open the processed file
+	processedFile, err := os.Open(processedVideoPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not open processed video", err)
+		return
+	}
+	defer processedFile.Close()
 	
 	// generate random 32 bytes file path
 	key := make([]byte, 32)
@@ -104,15 +118,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	videoFile := fmt.Sprintf("%v/%v.%s", aspectRatio, filePath, "mp4")
 	videoURL := fmt.Sprintf("https://%v.s3.%v.amazonaws.com/%v", cfg.s3Bucket, cfg.s3Region, videoFile)
-
-
-
+		
 	createFile.Seek(0, io.SeekStart)		
 
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &videoFile,
-		Body:        createFile,
+		Body:        processedFile,
 		ContentType: &mediaCheck,
 	})
 	if err != nil {
@@ -188,7 +200,7 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	default:
 		aspectRatio = "other"
 	}
-	
+
   return aspectRatio, nil  
 
 }
@@ -214,9 +226,25 @@ func detectAspectRatio(width, height int) string {
 			}
 
 			return "other"
-	}
+}
 
 func isApprox(a, b, tolerance float64) bool {
 		diff := math.Abs(a - b)
 		return diff/b <= tolerance
+}
+
+func processVideoForFastStart(filePath string) (string, error) {
+	outputPath := filePath + ".processing"
+	cmd := exec.Command(
+			"ffmpeg",
+			"-i", filePath,
+			"-c", "copy",
+			"-movflags", "faststart",
+			"-f", "mp4",
+			outputPath,
+	)
+	if err := cmd.Run(); err != nil {
+			return "", err
+	}
+	return outputPath, nil
 }
