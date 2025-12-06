@@ -121,11 +121,15 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	filePath := base64.RawURLEncoding.EncodeToString(key)	
 
 	videoFile := fmt.Sprintf("%v/%v.%s", aspectRatio, filePath, "mp4")
-	//videoURL := fmt.Sprintf("https://%v.s3.%v.amazonaws.com/%v", cfg.s3Bucket, cfg.s3Region, videoFile)
+	//videoURL := fmt.Sprintf("https://%v.s3.%v.amazonaws.com/%v", cfg.s3Bucket, cfg.s3Region, videoFile) // direct URL version
 	
-	videoURL := fmt.Sprintf("%v,%v", cfg.s3Bucket, videoFile) // temporary hardcode for testing
+	//videoURL := fmt.Sprintf("%v,%v", cfg.s3Bucket, videoFile) // presigned URL version
 		
+	videoURL := fmt.Sprintf("https://%v/%v", cfg.cdnURL, videoFile) // CDN version
+	
+	
 
+	// reset file pointer
 	
 	createFile.Seek(0, io.SeekStart)		
 
@@ -156,13 +160,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	/*
 	signedVideo, err := cfg.dbVideoToSignedVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't generate presigned URL", err)
 		return
 	}
-
-	respondWithJSON(w, http.StatusOK, signedVideo)
+	*/
+	respondWithJSON(w, http.StatusOK, video)
 }
 
 func getVideoAspectRatio(filePath string) (string, error) {
@@ -263,6 +268,7 @@ func processVideoForFastStart(filePath string) (string, error) {
 	return outputPath, nil
 }
 
+// s3 presigned URL generation
 func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
 	// Create a presign client
 	presignClient := s3.NewPresignClient(s3Client)
@@ -289,7 +295,7 @@ func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video
 	if video.VideoURL == nil {
     return video, nil
   }
-	
+
 	parts := strings.Split(*video.VideoURL, ",")
 	if len(parts) < 2 {
 			return video, nil

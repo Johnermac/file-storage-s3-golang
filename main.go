@@ -25,6 +25,7 @@ type apiConfig struct {
 	s3CfDistribution string
 	port             string
 	s3Client 			   *s3.Client
+	cdnURL           string
 }
 
 
@@ -76,6 +77,11 @@ func main() {
 		log.Fatal("S3_CF_DISTRO environment variable is not set")
 	}
 
+	cdnURL := os.Getenv("CDN_URL")
+	if cdnURL == "" {
+		log.Fatal("CDN_URL environment variable is not set")
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		log.Fatal("PORT environment variable is not set")
@@ -98,6 +104,7 @@ func main() {
 		s3CfDistribution: s3CfDistribution,
 		port:             port,		
 		s3Client:					s3Client,	
+		cdnURL:          cdnURL,
 	}
 
 	err = cfg.ensureAssetsDir()
