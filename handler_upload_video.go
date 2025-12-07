@@ -125,7 +125,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	
 	//videoURL := fmt.Sprintf("%v,%v", cfg.s3Bucket, videoFile) // presigned URL version
 		
-	videoURL := fmt.Sprintf("https://%v/%v", cfg.cdnURL, videoFile) // CDN version
+	videoURL := fmt.Sprintf("https://%v/%v", cfg.s3CfDistribution, videoFile) // CDN version
 	
 	
 
@@ -268,7 +268,7 @@ func processVideoForFastStart(filePath string) (string, error) {
 	return outputPath, nil
 }
 
-// s3 presigned URL generation
+// s3 presigned URL generation - removed after cdn integration
 func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
 	// Create a presign client
 	presignClient := s3.NewPresignClient(s3Client)
